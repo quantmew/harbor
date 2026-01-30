@@ -1,19 +1,62 @@
 #!/bin/bash
 set -euo pipefail
 
-# Install curl if not available
-if command -v apk &> /dev/null; then
-    apk add --no-cache curl bash
-elif command -v apt-get &> /dev/null; then
-    apt-get update
-    apt-get install -y curl
+# Ensure curl or wget is available
+ensure_download_tool() {
+    if command -v curl &> /dev/null; then
+        return 0
+    fi
+    if command -v wget &> /dev/null; then
+        return 0
+    fi
+    # Neither available, install curl using system package manager
+    if command -v apk &> /dev/null; then
+        apk add --no-cache curl
+    elif command -v apt-get &> /dev/null; then
+        apt-get update && apt-get install -y curl
+    elif command -v yum &> /dev/null; then
+        yum install -y curl
+    else
+        echo "Error: Could not install curl. Please install curl or wget manually."
+        exit 1
+    fi
+}
+
+# Install nvm if not already installed
+if [ ! -d "$HOME/.nvm" ]; then
+    echo "Installing nvm..."
+    ensure_download_tool
+    if command -v curl &> /dev/null; then
+        curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
+    else
+        wget -qO- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
+    fi
 fi
 
-# Install Claude Code using the official installer
+# Load nvm
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+
+# Install latest LTS version of Node.js
+if ! command -v node &> /dev/null; then
+    echo "Installing Node.js LTS via nvm..."
+    nvm install --lts
+    nvm alias default lts/*
+fi
+
+# Install Claude Code using npm
 {% if version %}
-curl -fsSL https://claude.ai/install.sh | bash -s -- {{ version }}
+npm install -g @anthropic-ai/claude-code@{{ version }}
 {% else %}
-curl -fsSL https://claude.ai/install.sh | bash
+npm install -g @anthropic-ai/claude-code
 {% endif %}
 
 echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+
+# Persist nvm configuration in .bashrc
+if ! grep -q 'NVM_DIR' ~/.bashrc; then
+    echo '' >> ~/.bashrc
+    echo '# Load nvm' >> ~/.bashrc
+    echo 'export NVM_DIR="$HOME/.nvm"' >> ~/.bashrc
+    echo '[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"' >> ~/.bashrc
+fi
